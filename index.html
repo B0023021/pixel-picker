@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Pixel Picker – 完全版</title>
+<meta name="theme-color" content="#0b0c0f">
+<style>
+:root{--bg:#0b0c0f;--card:#14161a;--mut:#8b93a7;--tx:#e6ebf2;--line:#1f232b;--accent:#4da3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
+header{position:sticky;top:0;padding:12px 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(11,12,15,.95),rgba(11,12,15,.75));z-index:10}
+h1{margin:0;font-size:18px}
+main{max-width:980px;margin:0 auto;padding:14px;display:grid;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--line);background:#0f1218;color:var(--tx);padding:10px 14px;border-radius:12px;font-weight:600;font-size:14px}
+.btn:active{transform:translateY(1px)}
+.chip{padding:6px 10px;font-size:12px;border:1px solid var(--line);border-radius:999px;color:var(--mut)}
+select,input[type="checkbox"]{accent-color:var(--accent)}
+input[type="file"]{display:none}
+.slider{width:100%}
+label{font-size:12px;color:var(--mut)}
+canvas{width:100%;max-height:68vh;border-radius:12px;background:#0a0b0e;border:1px solid var(--line);touch-action:none}
+#loupe{position:absolute;pointer-events:none;border:2px solid #0008;border-radius:10px;display:none;box-shadow:0 6px 16px #0008}
+.readout{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0c1119;padding:6px 10px;border-radius:8px;border:1px solid #212a3a;font-size:13px}
+.swatch{width:44px;height:44px;border-radius:10px;border:1px solid #0006}
+.grid2{display:grid;gap:10px}
+.grid2.cols{grid-template-columns:1fr 1fr}
+#history{display:flex;gap:8px;flex-wrap:wrap}
+.hist{display:flex;align-items:center;gap:6px;border:1px solid #23304a;padding:4px 8px;border-radius:999px;background:#0e1420;font-size:12px}
+.hist .h{width:16px;height:16px;border-radius:4px;border:1px solid #0006}
+#palette{display:flex;gap:8px;flex-wrap:wrap}
+.p{width:44px;height:44px;border-radius:8px;border:1px solid #0006}
+.note{font-size:12px;color:#a7b1c7}
+#compareWrap{position:relative}
+#compareSlider{width:100%}
+#video{width:100%;max-height:68vh;border-radius:12px;border:1px solid var(--line);display:none;background:#000}
+.badge{font-size:11px;padding:4px 8px;border:1px dashed #5b95ff;border-radius:999px;color:#a9c7ff}
+.warn{color:#ffd479} .ok{color:#95ffa8} .err{color:#ff7b7b}
+</style>
+</head>
+<body>
+<header><h1>Pixel Picker（完全版） <span class="badge" id="secureBadge"></span></h1></header>
+
+<main>
+  <!-- 操作 -->
+  <section class="card grid2 cols">
+    <div>
+      <div class="row">
+        <button id="btnCamera" class="btn">📷 写真を撮る</button>
+        <input id="cameraInput" type="file" accept="image/*" capture="environment">
+        <button id="btnLibrary" class="btn">🖼 画像を選ぶ</button>
+        <input id="fileInput" type="file" accept="image/*">
+        <button id="btnLive" class="btn">🎥 ライブカメラ</button>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <div class="row" style="justify-content:space-between"><label>ピクセルサイズ</label><span id="pxLabel" class="chip">8px</span></div>
+          <input id="pxSize" class="slider" type="range" min="1" max="40" value="8">
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between"><label>縮小係数</label><span id="scaleLabel" class="chip">0.50x</span></div>
+          <input id="scale" class="slider" type="range" min="0.2" max="1" step="0.05" value="0.5">
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between"><label>平均サンプル（px）</label><span id="avgLabel" class="chip">1×1</span></div>
+          <input id="avg" class="slider" type="range" min="1" max="15" step="2" value="1">
+        </div>
+        <div>
+          <label>色覚サポート</label>
+          <select id="cvd" class="btn" style="padding-right:28px">
+            <option value="none">なし</option>
+            <option value="protanopia">プロタン</option>
+            <option value="deuteranopia">デュータン</option>
+            <option value="tritanopia">トリタン</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <button id="toggleGrid" class="btn">グリッド</button>
+        <label class="row"><input id="loupeToggle" type="checkbox"> ルーペ</label>
+        <label class="row"><input id="voiceToggle" type="checkbox"> 音声</label>
+        <button id="shareBtn" class="btn">共有</button>
+        <button id="saveBtn" class="btn">保存</button>
+      </div>
+      <div class="note" id="status">画像を読み込んでください。</div>
+    </div>
+
+    <div>
+      <label>比較（左：通常 / 右：CVD）</label>
+      <input id="compareSlider" type="range" min="0" max="100" value="0">
+      <div id="compareWrap">
+        <canvas id="canvas" width="0" height="0"></canvas>
+        <canvas id="cvdCanvas" width="0" height="0" style="position:absolute;left:0;top:0"></canvas>
+        <canvas id="maskCanvas" width="0" height="0" style="position:absolute;left:0;top:0;pointer-events:none"></canvas>
+        <canvas id="loupe" width="120" height="120"></canvas>
+        <video id="video" playsinline></video>
+      </div>
+    </div>
+  </section>
+
+  <!-- 読み取り結果 -->
+  <section class="card">
+    <div class="row" style="gap:12px">
+      <div id="swatch" class="swatch"></div>
+      <div style="display:grid;gap:8px;min-width:0">
+        <div class="readout"><span>HEX</span><span id="hex" class="code">#—</span><button id="copyHex" class="btn">コピー</button></div>
+        <div class="readout"><span>RGB</span><span id="rgb" class="code">—</span><button id="copyRgb" class="btn">コピー</button></div>
+        <div class="readout"><span>HSL</span><span id="hsl" class="code">—</span><span class="chip" id="nameChip">色名: —</span></div>
+        <div class="row note" id="contrast">対比比: —（AA/AAA 判定）</div>
+        <div class="note" id="themeNote">テーマ: —</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- パレット & 履歴 -->
+  <section class="card grid2 cols">
+    <div>
+      <div class="row" style="justify-content:space-between">
+        <label>抽出パレット</label>
+        <button id="paletteBtn" class="btn">パレット生成</button>
+      </div>
+      <div id="palette" style="margin-top:8px"></div>
+    </div>
+    <div>
+      <label>履歴（タップでコピー / 長押しで削除）</label>
+      <div id="history" style="margin-top:8px"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+(() => {
+  // --- Elements
+  const secure = (location.protocol==='https:' || location.hostname==='localhost');
+  document.getElementById('secureBadge').textContent = secure? 'https/localhost ✅' : 'file/http（カメラ制限）⚠️';
+
+  const btnCamera = byId('btnCamera'), cameraInput = byId('cameraInput');
+  const btnLibrary = byId('btnLibrary'), fileInput = byId('fileInput');
+  const btnLive = byId('btnLive'), video = byId('video');
+  const canvas = byId('canvas'), ctx = canvas.getContext('2d',{willReadFrequently:true});
+  const cvdCanvas = byId('cvdCanvas'), cctx = cvdCanvas.getContext('2d',{willReadFrequently:true});
+  const maskCanvas = byId('maskCanvas'), mctx = maskCanvas.getContext('2d');
+  const loupe = byId('loupe'), lctx = loupe.getContext('2d');
+  const pxSize = byId('pxSize'), scale = byId('scale'), avg = byId('avg');
+  const pxLabel = byId('pxLabel'), scaleLabel = byId('scaleLabel'), avgLabel = byId('avgLabel');
+  const toggleGridBtn = byId('toggleGrid'), loupeToggle = byId('loupeToggle'), voiceToggle = byId('voiceToggle');
+  const cvdSelect = byId('cvd'), compareSlider = byId('compareSlider');
+  const swatch = byId('swatch'), hexEl = byId('hex'), rgbEl = byId('rgb'), hslEl = byId('hsl');
+  const nameChip = byId('nameChip'), contrastEl = byId('contrast'), themeNote = byId('themeNote');
+  const statusEl = byId('status'), shareBtn = byId('shareBtn'), saveBtn = byId('saveBtn');
+  const copyHexBtn = byId('copyHex'), copyRgbBtn = byId('copyRgb');
+  const paletteBtn = byId('paletteBtn'), paletteBox = byId('palette'), histBox = byId('history');
+
+  // --- State
+  let showGrid=false, originalImg=null, live=false;
+  let displayWidth=0, displayHeight=0;
+  const DPR = window.devicePixelRatio || 1;
+  const supportsOffscreen = !!window.OffscreenCanvas;
+
+  // --- Utils
+  function byId(id){ return document.getElementById(id) }
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const round=(x)=>Math.round(x);
+  function toHex(n){ return n.toString(16).padStart(2,'0') }
+  function rgbToHex(r,g,b){ return ('#'+toHex(r)+toHex(g)+toHex(b)).toUpperCase() }
+  function hexToRgb(hex){ const v=hex.replace('#','');return [parseInt(v.slice(0,2),16),parseInt(v.slice(2,4),16),parseInt(v.slice(4,6),16)] }
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;
+    if(max===min){h=s=0}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);
+      switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4}h/=6}
+    return [Math.round(h*360),Math.round(s*100),Math.round(l*100)]
+  }
+  function luminance(r,g,b){const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)});return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]}
+  function contrastRatio(rgb1,rgb2){const L1=luminance(...rgb1),L2=luminance(...rgb2);const lighter=Math.max(L1,L2),darker=Math.min(L1,L2);return ( (lighter+0.05)/(darker+0.05) )}
+  function speakJa(text){ if(!voiceToggle.checked) return; try{ const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP'; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch{} }
+  function fileToDataURL(file){ return new Promise((res,rej)=>{const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(fr.error); fr.readAsDataURL(file)}) }
+  async function fileToImg(file){ const url=await fileToDataURL(file); return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=rej; img.src=url }) }
+
+  // --- CVD matrices（近似）
+  function applyCvd([r,g,b], mode){
+    const M=({
+      none:[[1,0,0],[0,1,0],[0,0,1]],
+      protanopia:[[0.0,1.051,-0.051],[0.0,1.0,0.0],[0.0,0.0,1.0]],
+      deuteranopia:[[1.0,0.0,0.0],[0.951,0.0,0.049],[0.0,0.0,1.0]],
+      tritanopia:[[1.0,0.0,0.0],[0.0,1.0,0.0],[-0.867,1.867,0.0]],
+    })[mode||'none'];
+    const R=clamp(round(M[0][0]*r+M[0][1]*g+M[0][2]*b),0,255);
+    const G=clamp(round(M[1][0]*r+M[1][1]*g+M[1][2]*b),0,255);
+    const B=clamp(round(M[2][0]*r+M[2][1]*g+M[2][2]*b),0,255);
+    return [R,G,B]
+  }
+
+  // --- UI labels
+  function updateLabels(){ pxLabel.textContent=pxSize.value+'px'; scaleLabel.textContent=Number(scale.value).toFixed(2)+'x'; avgLabel.textContent=avg.value+'×'+avg.value }
+
+  // --- Draw pipeline (image -> pixelate -> normal & cvd)
+  function drawAll(){
+    if(!originalImg) return;
+    const s = parseFloat(scale.value);
+    const maxCSSW = document.getElementById('compareWrap').clientWidth;
+    const maxW = Math.min(round(maxCSSW*DPR), 2200);
+    const rawW = clamp(round((originalImg.naturalWidth || originalImg.videoWidth)*s),1,10000);
+    const rawH = clamp(round((originalImg.naturalHeight|| originalImg.videoHeight)*s),1,10000);
+    const aspect = rawW/rawH;
+    displayWidth = Math.min(maxW, rawW);
+    displayHeight = Math.max(1, round(displayWidth/aspect));
+
+    [canvas, cvdCanvas, maskCanvas].forEach(cv=>{cv.width=displayWidth;cv.height=displayHeight});
+
+    const px = parseInt(pxSize.value,10);
+    const w = Math.max(1, Math.floor(displayWidth/px));
+    const h = Math.max(1, Math.floor(displayHeight/px));
+    const makeC = (W,H)=>{ if(supportsOffscreen){const c=new OffscreenCanvas(W,H); return c}
+                            const c=document.createElement('canvas'); c.width=W; c.height=H; return c }
+
+    const tmpW=rawW, tmpH=rawH;
+    const tmp = makeC(tmpW,tmpH), tctx = tmp.getContext('2d');
+    tctx.imageSmoothingEnabled=true;
+    if(live) tctx.drawImage(originalImg,0,0,tmpW,tmpH);
+    else     tctx.drawImage(originalImg,0,0,tmpW,tmpH);
+
+    const low = makeC(w,h), lctx2 = low.getContext('2d',{willReadFrequently:true});
+    lctx2.imageSmoothingEnabled=false;
+    lctx2.drawImage(tmp,0,0,tmpW,tmpH,0,0,w,h);
+
+    // normal
+    ctx.imageSmoothingEnabled=false;
+    ctx.clearRect(0,0,displayWidth,displayHeight);
+    ctx.drawImage(low,0,0,w,h,0,0,displayWidth,displayHeight);
+
+    // cvd
+    const imgd=lctx2.getImageData(0,0,w,h), data=imgd.data, mode=cvdSelect.value;
+    if(mode!=='none'){
+      for(let i=0;i<data.length;i+=4){ const res=applyCvd([data[i],data[i+1],data[i+2]], mode); data[i]=res[0]; data[i+1]=res[1]; data[i+2]=res[2]; }
+      lctx2.putImageData(imgd,0,0);
+    }
+    cctx.imageSmoothingEnabled=false;
+    cctx.clearRect(0,0,displayWidth,displayHeight);
+    cctx.drawImage(low,0,0,w,h,0,0,displayWidth,displayHeight);
+
+    // compare mask
+    const pct = parseInt(compareSlider.value,10)/100;
+    mctx.clearRect(0,0,displayWidth,displayHeight);
+    mctx.save();
+    mctx.globalCompositeOperation='destination-out';
+    mctx.fillStyle='#000'; mctx.fillRect(0,0,displayWidth*pct,displayHeight);
+    mctx.restore();
+
+    // grid
+    if(showGrid) drawGrid(px);
+
+    statusEl.textContent = `画像: ${rawW}×${rawH} → 表示: ${displayWidth}×${displayHeight}`;
+  }
+
+  function drawGrid(px){
+    ctx.save(); ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.lineWidth=1;
+    const cols=Math.floor(displayWidth/px), rows=Math.floor(displayHeight/px);
+    for(let x=0;x<=cols;x++){ ctx.beginPath(); ctx.moveTo(x*px+.5,0); ctx.lineTo(x*px+.5,rows*px); ctx.stroke() }
+    for(let y=0;y<=rows;y++){ ctx.beginPath(); ctx.moveTo(0,y*px+.5); ctx.lineTo(cols*px,y*px+.5); ctx.stroke() }
+    ctx.restore();
+  }
+
+  // --- pick color (avg N×N)
+  function pickAt(pt){
+    const n=parseInt(avg.value,10);
+    const half=Math.floor(n/2);
+    let r=0,g=0,b=0,cnt=0;
+    for(let dy=-half; dy<=half; dy++){
+      for(let dx=-half; dx<=half; dx++){
+        const x=clamp(pt.x+dx,0,canvas.width-1), y=clamp(pt.y+dy,0,canvas.height-1);
+        const d=ctx.getImageData(x,y,1,1).data;
+        r+=d[0]; g+=d[1]; b+=d[2]; cnt++;
+      }
+    }
+    updateReadout(round(r/cnt), round(g/cnt), round(b/cnt));
+  }
+
+  function canvasPoint(evt){
+    const rect=canvas.getBoundingClientRect();
+    const x=(evt.clientX-rect.left)* (canvas.width/rect.width);
+    const y=(evt.clientY-rect.top) * (canvas.height/rect.height);
+    return {x:Math.floor(x),y:Math.floor(y)}
+  }
+
+  // --- readout + helpers
+  function colorNameFromHsl(h,s,l){
+    if(s<10 && l<90 && l>10) return 'グレイッシュ';
+    if(s<10 && (l>=90||l<=10)) return l>=90?'ホワイト':'ブラック';
+    const hues=[['赤',0],['橙',20],['黄',45],['黄緑',75],['緑',130],['青緑',165],['青',200],['藍',230],['紫',275],['赤紫',320],['赤',360]];
+    let name=''; for(let i=1;i<hues.length;i++){ if(h<hues[i][1]){ name=hues[i-1][0]; break } }
+    if(s<35) name='ペール'+name;
+    else if(l<25) name='ダーク'+name;
+    else if(l>80) name='ライト'+name;
+    return name;
+  }
+
+  function updateReadout(r,g,b){
+    const hex=rgbToHex(r,g,b);
+    const [h,s,l]=rgbToHsl(r,g,b);
+    const name=colorNameFromHsl(h,s,l);
+    swatch.style.background=`rgb(${r},${g},${b})`;
+    hexEl.textContent=hex; rgbEl.textContent=`rgb(${r}, ${g}, ${b})`; hslEl.textContent=`hsl(${h} ${s}% ${l}%)`;
+    nameChip.textContent='色名: '+name;
+
+    // Contrast (AA/AAA)
+    const cw=contrastRatio([r,g,b],[255,255,255]).toFixed(2);
+    const ck=contrastRatio([r,g,b],[0,0,0]).toFixed(2);
+    const passAA=(v)=>v>=4.5, passAA_large=(v)=>v>=3.0, passAAA=(v)=>v>=7.0, passAAA_large=(v)=>v>=4.5;
+    contrastEl.innerHTML=`<span>白 ${cw}</span> / <span>黒 ${ck}</span> ｜ <span class="${passAA(cw)||passAA(ck)?'ok':'err'}">AA</span> <span class="${passAAA(cw)||passAAA(ck)?'ok':'warn'}">AAA</span>（大: <span class="${passAA_large(cw)||passAA_large(ck)?'ok':'err'}">AA</span>/<span class="${passAAA_large(cw)||passAAA_large(ck)?'ok':'warn'}">AAA</span>）`;
+
+    // Theme detection
+    const theme = (s<12)?'モノクロ' : ((h>=30 && h<=210)?'寒色寄り':'暖色寄り');
+    themeNote.textContent='テーマ: '+theme;
+
+    // history
+    pushHistory(hex);
+
+    // voice
+    speakJa(`${name}。エイチイーエックス ${hex.replace('#','')}`);
+  }
+
+  // --- History (localStorage)
+  function getHist(){ try{ return JSON.parse(localStorage.getItem('pp_hist')||'[]') }catch{ return [] } }
+  function setHist(arr){ localStorage.setItem('pp_hist', JSON.stringify(arr.slice(0,12))) }
+  function pushHistory(hex){
+    const arr=getHist().filter(x=>x!==hex);
+    arr.unshift(hex); setHist(arr); renderHist();
+  }
+  function renderHist(){
+    histBox.innerHTML='';
+    for(const h of getHist()){
+      const el=document.createElement('button');
+      el.className='hist'; el.title='タップでコピー／長押しで削除';
+      el.innerHTML=`<span class="h" style="background:${h}"></span>${h}`;
+      el.addEventListener('click', ()=>copyText(h));
+      el.addEventListener('contextmenu', (e)=>{e.preventDefault(); const arr=getHist().filter(x=>x!==h); setHist(arr); renderHist();});
+      histBox.appendChild(el);
+    }
+  }
+
+  // --- Palette (k-means lite)
+  function paletteFromCanvas(K=5){
+    const step=4; // サンプリング間隔
+    const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    const pts=[];
+    for(let y=0;y<canvas.height;y+=step){
+      for(let x=0;x<canvas.width;x+=step){
+        const i=(y*canvas.width+x)*4; pts.push([data[i],data[i+1],data[i+2]]);
+      }
+    }
+    // kmeans init
+    const centers=[]; for(let k=0;k<K;k++){ const p=pts[Math.floor(Math.random()*pts.length)]; centers.push(p.slice()) }
+    const iter=8;
+    for(let t=0;t<iter;t++){
+      const sums=Array.from({length:K},()=>[0,0,0,0]);
+      for(const p of pts){
+        let bi=0,bd=1e9;
+        for(let k=0;k<K;k++){ const c=centers[k]; const d=(p[0]-c[0])**2+(p[1]-c[1])**2+(p[2]-c[2])**2; if(d<bd){bd=d;bi=k} }
+        const s=sums[bi]; s[0]+=p[0]; s[1]+=p[1]; s[2]+=p[2]; s[3]+=1;
+      }
+      for(let k=0;k<K;k++){ const s=sums[k]; if(s[3]) centers[k]=[Math.round(s[0]/s[3]),Math.round(s[1]/s[3]),Math.round(s[2]/s[3])] }
+    }
+    return centers;
+  }
+  function renderPalette(){
+    const cols=paletteFromCanvas(5);
+    paletteBox.innerHTML='';
+    for(const [r,g,b] of cols){
+      const hex=rgbToHex(r,g,b);
+      const d=document.createElement('button'); d.className='p'; d.style.background=hex; d.title=hex;
+      d.addEventListener('click',()=>copyText(hex)); paletteBox.appendChild(d);
+    }
+  }
+
+  // --- Share & Save
+  async function copyText(t){ try{ await navigator.clipboard.writeText(t); alert('コピー: '+t) }catch{ alert('コピー不可') } }
+  async function share(){
+    const hex=hexEl.textContent||''; const url=location.href;
+    if(navigator.share){ try{ await navigator.share({title:'Pixel Picker',text:`色: ${hex}`,url}) }catch{} }
+    else copyText(`${hex} ${url}`);
+  }
+  function savePng(){
+    const a=document.createElement('a'); a.download='pixelated.png'; a.href=canvas.toDataURL('image/png'); a.click();
+  }
+
+  // --- Loupe
+  function drawLoupe(pt){
+    if(!loupeToggle.checked){ loupe.style.display='none'; return }
+    const size=round(60); // 表示半径
+    const scale=3; // 拡大率
+    loupe.width=size*2; loupe.height=size*2;
+    lctx.imageSmoothingEnabled=false;
+    lctx.clearRect(0,0,loupe.width,loupe.height);
+    lctx.drawImage(canvas, pt.x-size/scale, pt.y-size/scale, (size*2)/scale, (size*2)/scale, 0,0, size*2, size*2);
+    // クロスヘア
+    lctx.strokeStyle='#fff'; lctx.lineWidth=1;
+    lctx.beginPath(); lctx.moveTo(size,0); lctx.lineTo(size,size*2); lctx.moveTo(0,size); lctx.lineTo(size*2,size); lctx.stroke();
+    loupe.style.display='block';
+    // 位置（指にかぶらないよう少し上）
+    const wrap=document.getElementById('compareWrap').getBoundingClientRect();
+    loupe.style.left=(wrap.left + (pt.x/DPR) + 16)+'px';
+    loupe.style.top =(wrap.top  + (pt.y/DPR) - loupe.height - 12)+'px';
+  }
+
+  // --- Live camera
+  async function toggleLive(){
+    if(live){ // stop
+      live=false; video.srcObject && video.srcObject.getTracks().forEach(t=>t.stop());
+      video.style.display='none'; canvas.style.display='block'; cvdCanvas.style.display='block'; maskCanvas.style.display='block';
+      btnLive.textContent='🎥 ライブカメラ';
+      if(originalImg) drawAll();
+      return;
+    }
+    if(!secure){ alert('ライブカメラは https でのみ利用できます'); return }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      video.srcObject=stream; await video.play();
+      live=true; originalImg=video; video.style.display='block';
+      canvas.style.display='block'; cvdCanvas.style.display='block'; maskCanvas.style.display='block';
+      btnLive.textContent='■ 停止';
+      const loop=()=>{ if(!live) return; drawAll(); requestAnimationFrame(loop) }; loop();
+    }catch(e){ alert('カメラ起動に失敗: 権限を確認してください'); }
+  }
+
+  // --- Event wiring
+  btnCamera.addEventListener('click',()=>cameraInput.click());
+  btnLibrary.addEventListener('click',()=>fileInput.click());
+  btnLive.addEventListener('click',toggleLive);
+
+  cameraInput.addEventListener('change',e=>handleFile(e.target.files?.[0]));
+  fileInput.addEventListener('change',e=>handleFile(e.target.files?.[0]));
+
+  async function handleFile(file){
+    if(!file) return; statusEl.textContent='読み込み中…';
+    try{ originalImg=await fileToImg(file); live=false; video.style.display='none'; drawAll(); statusEl.textContent='画像をタップして色を取得' }
+    catch(e){ statusEl.textContent='読み込み失敗'; console.error(e) }
+    finally{ cameraInput.value=''; fileInput.value='' }
+  }
+
+  pxSize.addEventListener('input',()=>{updateLabels(); drawAll()});
+  scale.addEventListener('input',()=>{updateLabels(); drawAll()});
+  avg.addEventListener('input',()=>{updateLabels()});
+  cvdSelect.addEventListener('change',()=>drawAll());
+  toggleGridBtn.addEventListener('click',()=>{showGrid=!showGrid; drawAll()});
+  compareSlider.addEventListener('input',()=>drawAll());
+
+  canvas.addEventListener('pointerdown',(e)=>{ if(!canvas.width) return; const pt=canvasPoint(e); pickAt(pt); drawLoupe(pt) });
+  canvas.addEventListener('pointermove',(e)=>{ if(!canvas.width) return; const pt=canvasPoint(e); drawLoupe(pt) });
+  canvas.addEventListener('pointerleave',()=>{ loupe.style.display='none' });
+
+  copyHexBtn.addEventListener('click',()=>copyText(hexEl.textContent));
+  copyRgbBtn.addEventListener('click',()=>copyText(rgbEl.textContent));
+  shareBtn.addEventListener('click',share);
+  saveBtn.addEventListener('click',savePng);
+  paletteBtn.addEventListener('click',renderPalette);
+
+  // init
+  updateLabels(); renderHist();
+  if(!secure){ btnLive.disabled=true; btnCamera.textContent='📷 写真を撮る（Safariのhttpsで）' }
+})();
+</script>
+</body>
+</html>
