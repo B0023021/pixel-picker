@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0f">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>色覚テスト（簡易）</title>
+<style>
+  a:hover,
+  a:focus-visible{color:#DCE6FF;outline:2px solid #2a354a;outline-offset:2px;}
+  :root{--bg:#0b0c0f;--card:#14161a;--mut:#8b93a7;--tx:#e6ebf2;--line:#1f232b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
+  header{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:17px}
+  a.nav{color:var(--tx);text-decoration:none;display:inline-block;border:1px solid var(--line);padding:8px 10px;border-radius:10px;background:#0f1218}
+  main{max-width:760px;margin:0 auto;padding:12px;display:grid;gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn{appearance:none;border:1px solid var(--line);background:#0f1218;color:var(--tx);
+       padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer}
+  .btn:active{transform:translateY(1px)}
+  .chip{padding:6px 10px;font-size:12px;border:1px solid var(--line);border-radius:999px;color:var(--mut)}
+  canvas{width:100%;max-width:560px;display:block;margin:0 auto;border-radius:12px;background:#0a0b0e;border:1px solid var(--line)}
+  input[type="number"]{width:120px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:#0f1218;color:var(--tx);font-size:16px}
+  ul{margin:0 0 0 1.2em; padding:0}
+  li{margin:.25em 0}
+  .result{display:grid;gap:6px}
+  .badge{display:inline-block;padding:4px 8px;border-radius:8px;font-size:12px;border:1px solid #263042}
+  .ok{background:#1e3a22;color:#c3f1c7;border-color:#204a28}
+  .warn{background:#3a1517;color:#ffc2c7;border-color:#4a1b1e}
+  footer{padding:16px;text-align:center;color:var(--mut);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>色覚テスト（簡易）</h1>
+  <nav class="row">
+    <a class="nav" href="./index.html">⟵ 色選びへ</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <span class="chip">ステップ <span id="step">0</span> / <span id="total">9</span></span>
+      <div class="row">
+        <button id="btnRestart" class="btn">最初から</button>
+      </div>
+    </div>
+    <div style="display:grid;gap:12px">
+      <canvas id="plate" width="560" height="560" aria-label="色覚テストプレート"></canvas>
+      <div class="row" style="justify-content:center">
+        <input id="answer" type="number" placeholder="数字(例: 12)" inputmode="numeric">
+        <button id="btnNone" class="btn">見えない</button>
+        <button id="btnNext" class="btn">回答する</button>
+      </div>
+      <div id="msg" class="chip" style="text-align:center">数字が見えたら入力、見えなければ「見えない」を押してください。</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 6px">テストについて（注意）</h3>
+    <ul>
+      <li>これは <strong>簡易スクリーニング</strong> です。正式な診断ではありません。</li>
+      <li>明るい場所で、画面の明るさを中～高にして実施してください。</li>
+      <li>結果に不安がある場合は、<strong>石原表</strong>などの標準化テストや眼科での検査をおすすめします。</li>
+    </ul>
+  </section>
+
+  <section class="card result" id="resultCard" style="display:none">
+    <h3 style="margin:0 0 6px">結果</h3>
+    <div id="summary" class="chip">集計中…</div>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<footer>© Pixel Picker – 簡易テスト。学内課題・自己チェック用途。</footer>
+
+<script>
+'use strict';
+/* ========= 概要 =========
+  ・数字が描かれた「ドット模様の円（プレート）」を順番に表示
+  ・各プレートは protan / deutan / tritan のいずれかで「区別しにくい色」になるよう生成
+  ・ユーザー回答（数字 or 見えない）を採点 → タイプ別の傾向を集計して表示
+  ・アルゴリズム上、医学的診断ではないことを明示
+======================== */
+
+// ====== 基本ユーティリティ
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+const toHex=n=>n.toString(16).padStart(2,'0');
+const rgbToHex=(r,g,b)=>('#'+toHex(r)+toHex(g)+toHex(b)).toUpperCase();
+function hslToRgb(h,s,l){ s/=100; l/=100; const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r1=0,g1=0,b1=0;
+  if(0<=h&&h<60){r1=c;g1=x}else if(h<120){r1=x;g1=c}
+  else if(h<180){g1=0; b1=c; r1=0; g1=c; b1=x}
+  else if(h<240){g1=x;b1=c}
+  else if(h<300){r1=x;b1=c}
+  else{r1=c;b1=x}
+  return [Math.round((r1+m)*255),Math.round((g1+m)*255),Math.round((b1+m)*255)];
+}
+const distRGB=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+
+// ====== CVD 簡易行列（index.html と整合）
+const CVD={
+  protan:[[0.56667,0.43333,0],[0.55833,0.44167,0],[0,0.24167,0.75833]],
+  deutan:[[0.625,0.375,0],[0.70,0.30,0],[0,0.30,0.70]],
+  tritan:[[0.95,0.05,0],[0,0.43333,0.56667],[0,0.475,0.525]],
+};
+const applyM=(rgb,M)=>{const [r,g,b]=rgb; return [
+  clamp(Math.round(M[0][0]*r+M[0][1]*g+M[0][2]*b),0,255),
+  clamp(Math.round(M[1][0]*r+M[1][1]*g+M[1][2]*b),0,255),
+  clamp(Math.round(M[2][0]*r+M[2][1]*g+M[2][2]*b),0,255),
+];};
+const sim=(rgb,type)=> type==='none'? rgb : applyM(rgb,CVD[type]);
+
+// ====== プレートの色決定
+// 目標：通常視では十分に違い、特定タイプのシミュレーション後は「近い」色になるペアを探索
+function pickColorPair(target='protan'){
+  const maxTry=500;
+  for(let t=0;t<maxTry;t++){
+    const h = Math.random()*360;
+    const s = 40 + Math.random()*50;
+    const l = 45 + Math.random()*20;
+    const rgb1 = hslToRgb(h, s, l);
+    // 候補２：周辺色からサンプル
+    let best=null, bestD=1e9;
+    for(let i=0;i<60;i++){
+      const h2=(h + (Math.random()*120-60)+360)%360;
+      const s2= clamp(s + (Math.random()*30-15), 25, 95);
+      const l2= clamp(l + (Math.random()*20-10), 25, 90);
+      const rgb2=hslToRgb(h2,s2,l2);
+      const dn = distRGB(rgb1,rgb2);               // 通常視距離
+      const ds = distRGB(sim(rgb1,target), sim(rgb2,target)); // ターゲット視距離
+      // 通常で離れていて、ターゲットで近いものを採用
+      if(dn>=80 && ds<bestD){ bestD=ds; best=[rgb1,rgb2]; }
+    }
+    if(best && bestD<=16) return best;
+  }
+  // フォールバック（ほどほどに紛らわしいペア）
+  if(target==='tritan') return [[60,200,220],[60,180,120]];
+  return [[210,70,70],[100,200,110]];
+}
+
+// ====== プレート生成（Ishihara風モザイク）
+function drawPlate(canvas, numberText, target='protan'){
+  const ctx=canvas.getContext('2d'); const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  // 数字マスクをオフスクリーンで作る
+  const off=document.createElement('canvas'); off.width=W; off.height=H;
+  const og=off.getContext('2d');
+  og.fillStyle='#000'; og.fillRect(0,0,W,H);
+  og.font=`${Math.floor(W*0.42)}px system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif`;
+  og.textAlign='center'; og.textBaseline='middle';
+  og.fillStyle='#fff';
+  og.fillText(numberText, W/2, H/2);
+
+  // 色ペアを決定
+  const [colNum,colBg]=pickColorPair(target); // 数字色 / 背景色
+  // ドット配置
+  const R = Math.floor(W/2)-8; // 円半径
+  const cx=W/2, cy=H/2;
+  const dotR = Math.max(6, Math.floor(W/56));
+  const step = dotR*2.2;
+  for(let y=cy-R; y<=cy+R; y+=step){
+    for(let x=cx-R; x<=cx+R; x+=step){
+      const jx = x + (Math.random()*dotR - dotR/2);
+      const jy = y + (Math.random()*dotR - dotR/2);
+      if(Math.hypot(jx-cx,jy-cy)>R) continue;
+      // マスクを参照して数字領域か判定
+      const d = og.getImageData(clamp(Math.round(jx),0,W-1), clamp(Math.round(jy),0,H-1), 1,1).data[0];
+      const rgb = d>128 ? colNum : colBg;
+      // 少し色ばらつき
+      const jitter = (v)=>clamp(Math.round(v + (Math.random()*24-12)),0,255);
+      ctx.fillStyle = `rgb(${jitter(rgb[0])},${jitter(rgb[1])},${jitter(rgb[2])})`;
+      ctx.beginPath(); ctx.arc(jx,jy,dotR,0,Math.PI*2); ctx.fill();
+    }
+  }
+  // 外周を少し落とす
+  const grd=ctx.createRadialGradient(cx,cy,R*0.6,cx,cy,R);
+  grd.addColorStop(0,'rgba(0,0,0,0)'); grd.addColorStop(1,'rgba(0,0,0,0.35)');
+  ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
+}
+
+// ====== テストシーケンス
+const plate = document.getElementById('plate');
+const answer = document.getElementById('answer');
+const btnNext = document.getElementById('btnNext');
+const btnNone = document.getElementById('btnNone');
+const btnRestart = document.getElementById('btnRestart');
+const msg = document.getElementById('msg');
+const stepEl = document.getElementById('step');
+const totalEl = document.getElementById('total');
+const resultCard = document.getElementById('resultCard');
+const summaryEl = document.getElementById('summary');
+const detailEl = document.getElementById('detail');
+
+const PLAN = [
+  {type:'protan' , n: 12}, {type:'deutan' , n: 29}, {type:'tritan' , n: 57},
+  {type:'protan' , n: 74}, {type:'deutan' , n: 8 }, {type:'tritan' , n: 5 },
+  {type:'protan' , n: 26}, {type:'deutan' , n: 42}, {type:'tritan' , n: 39},
+];
+totalEl.textContent = PLAN.length;
+
+let i=0;
+const score = { protan:0, deutan:0, tritan:0 }; // そのタイプのプレートで間違えた数
+
+function render(){
+  resultCard.style.display='none';
+  answer.value=''; answer.focus();
+  stepEl.textContent = (i+1);
+  const p = PLAN[i];
+  drawPlate(plate, String(p.n), p.type);
+  msg.textContent = `問題 ${i+1}/${PLAN.length}：数字が見えますか？`;
+}
+
+function submit(ansStr){
+  const p = PLAN[i];
+  const ok = (ansStr === String(p.n));
+  if(!ok){ score[p.type]++; }
+  i++;
+  if(i<PLAN.length){ render(); }
+  else { showResult(); }
+}
+
+function showResult(){
+  resultCard.style.display='grid';
+  stepEl.textContent = PLAN.length;
+  const evalType=(miss)=> miss>=3? '可能性：高' : miss===2? '可能性：中' : '可能性：低';
+  summaryEl.innerHTML = `
+    終了！（全 ${PLAN.length} 問）<br>
+    <span class="badge ${score.protan>=2?'warn':'ok'}">赤（プロタン）: ${score.protan} / ${PLAN.filter(p=>p.type==='protan').length} → ${evalType(score.protan)}</span>
+    <span class="badge ${score.deutan>=2?'warn':'ok'}">緑（デュータン）: ${score.deutan} / ${PLAN.filter(p=>p.type==='deutan').length} → ${evalType(score.deutan)}</span>
+    <span class="badge ${score.tritan>=2?'warn':'ok'}">青（トリタン）: ${score.tritan} / ${PLAN.filter(p=>p.type==='tritan').length} → ${evalType(score.tritan)}</span>
+  `;
+  detailEl.innerHTML = `
+    <p class="chip">
+      これは学習・自己チェック向けの<strong>簡易スクリーニング</strong>です。<br>
+      公式な判定は、標準化された検査（例：石原表）および眼科での診断を受けてください。
+    </p>`;
+  msg.textContent='おつかれさまでした！ もう一度行う場合は「最初から」。';
+}
+
+btnNext.addEventListener('click', ()=> submit((answer.value||'').trim()));
+btnNone.addEventListener('click', ()=> submit('')); // 空文字は誤答扱い
+answer.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ submit((answer.value||'').trim()); } });
+btnRestart.addEventListener('click', ()=>{
+  i=0; score.protan=score.deutan=score.tritan=0; render();
+});
+render();
+</script>
+</body>
+</html>
